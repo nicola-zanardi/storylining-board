@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+﻿import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   DndContext,
   DragOverlay,
@@ -395,7 +395,6 @@ function SlideLaneDroppable({ sectionId, children }) {
 
 function App() {
   const [projectStore, setProjectStore] = useState(loadProjectStore);
-  const [scaleToFit, setScaleToFit] = useState(true);
   const [pendingFocus, setPendingFocus] = useState(null);
   const [activeDrag, setActiveDrag] = useState(null);
   const inputRefs = useRef(new Map());
@@ -1199,7 +1198,6 @@ function App() {
     },
     [updateActiveBoard],
   );
-
   const exportToPptx = useCallback(() => {
     const pptx = new PptxGenJS();
     pptx.layout = 'LAYOUT_WIDE';
@@ -1217,8 +1215,25 @@ function App() {
     const cardGapX = 0.14;
     const cardGapY = 0.14;
 
-    const maxSlides = Math.max(1, ...board.sections.map((section) => section.slides.length || 1));
-    const columns = Math.min(4, Math.max(1, Math.ceil(Math.sqrt(maxSlides))));
+    const sectionTextMargin = [4, 7, 4, 7];
+    const cardTextMargin = [4, 5, 4, 6];
+
+    const maxSlidesInSection = Math.max(1, ...board.sections.map((section) => section.slides.length || 1));
+    const totalSlides = board.sections.reduce(
+      (sum, section) => sum + Math.max(1, section.slides.length || 0),
+      0,
+    );
+
+    let columns = Math.min(6, Math.max(1, Math.ceil(Math.sqrt(maxSlidesInSection))));
+    if (totalSlides >= 12) {
+      columns = Math.max(columns, 4);
+    }
+    if (totalSlides >= 20 || maxSlidesInSection >= 18) {
+      columns = Math.max(columns, 5);
+    }
+    if (totalSlides >= 30 || maxSlidesInSection >= 30) {
+      columns = 6;
+    }
 
     const rawHeights = board.sections.map((section) => {
       const slideCount = Math.max(1, section.slides.length);
@@ -1233,15 +1248,12 @@ function App() {
 
     const availableHeight = EXPORT_HEIGHT - margin * 2;
     const computedScale = availableHeight / totalRawHeight;
-    const scale = scaleToFit ? Math.min(1, computedScale) : 1;
+    const scale = Math.min(1, computedScale);
 
     if (computedScale < 1) {
       console.warn(
         `Storyline content exceeds one slide at native size. Scale factor required: ${computedScale.toFixed(2)}.`,
       );
-      if (!scaleToFit) {
-        window.alert('Content exceeds one slide. Enable "Scale to Fit" for a guaranteed single-slide export.');
-      }
     }
 
     slide.addShape(pptx.ShapeType.rect, {
@@ -1278,39 +1290,43 @@ function App() {
       const laneW = rightWidth;
       const laneH = sectionHeight;
 
-      slide.addShape(pptx.ShapeType.rect, {
-        x: margin,
-        y: cursorY,
-        w: sectionWidth,
-        h: sectionHeight,
-        line: { color: SECTION_COLOR, pt: 1 },
-        fill: { color: SECTION_COLOR },
-      });
-
-      slide.addText(`SECTION ${toSectionLabel(sectionIndex)}`, {
-        x: margin + 0.1,
-        y: cursorY + 0.06,
-        w: sectionWidth - 0.2,
-        h: 0.14,
-        bold: true,
-        fontFace: 'Calibri',
-        fontSize: Math.max(6, 7.2 * scale),
-        color: 'D7C8EE',
-        fit: 'resize',
-      });
-
-      slide.addText(section.title || 'Section', {
-        x: margin + 0.1,
-        y: cursorY + 0.24,
-        w: sectionWidth - 0.2,
-        h: sectionHeight - 0.28,
-        color: 'FFFFFF',
-        bold: true,
-        fontFace: 'Calibri',
-        valign: 'top',
-        fontSize: Math.max(8, 11 * scale),
-        fit: 'resize',
-      });
+      slide.addText(
+        [
+          {
+            text: `SECTION ${toSectionLabel(sectionIndex)}`,
+            options: {
+              bold: true,
+              fontFace: 'Calibri',
+              fontSize: Math.max(6, 7.2 * scale),
+              color: 'D7C8EE',
+              breakLine: true,
+              paraSpaceAfter: 1,
+            },
+          },
+          {
+            text: section.title || 'Section',
+            options: {
+              bold: true,
+              fontFace: 'Calibri',
+              fontSize: Math.max(8, 11 * scale),
+              color: 'FFFFFF',
+            },
+          },
+        ],
+        {
+          shape: pptx.ShapeType.rect,
+          x: margin,
+          y: cursorY,
+          w: sectionWidth,
+          h: sectionHeight,
+          line: { color: SECTION_COLOR, pt: 1 },
+          fill: { color: SECTION_COLOR },
+          margin: sectionTextMargin,
+          valign: 'top',
+          fit: 'shrink',
+          wrap: true,
+        },
+      );
 
       const slideCount = Math.max(1, section.slides.length);
       const rows = Math.ceil(slideCount / columns);
@@ -1329,57 +1345,49 @@ function App() {
         const x = laneX + lanePadX + column * (cardWidth + cardGapX);
         const y = laneY + lanePadY + row * (cardHeight + cardGapY);
 
-        slide.addShape(pptx.ShapeType.rect, {
+        const globalNumber = slideNumberById[deckSlide.id] ?? slideIndex + 1;
+        const titleText = `${globalNumber}. ${deckSlide.title && deckSlide.title.trim() ? deckSlide.title.trim() : 'Slide'}`;
+
+        const bulletLines = deckSlide.bullets
+          .map((bullet) => bullet.trim())
+          .filter(Boolean);
+
+        const cardTextRuns = [
+          {
+            text: titleText,
+            options: {
+              bold: true,
+              fontFace: 'Calibri',
+              color: '1F3044',
+              fontSize: Math.max(6.6, 8.2 * scale),
+              breakLine: bulletLines.length > 0,
+              paraSpaceAfter: 2,
+            },
+          },
+          ...bulletLines.map((bullet, bulletIndex) => ({
+            text: bullet,
+            options: {
+              bullet: true,
+              fontFace: 'Calibri',
+              color: '314A63',
+              fontSize: Math.max(6, 7.2 * scale),
+              breakLine: bulletIndex < bulletLines.length - 1,
+            },
+          })),
+        ];
+
+        slide.addText(cardTextRuns, {
+          shape: pptx.ShapeType.rect,
           x,
           y,
           w: cardWidth,
           h: cardHeight,
           line: { color: 'C8D5E2', pt: 0.8 },
           fill: { color: CARD_BG },
-        });
-
-        const globalNumber = slideNumberById[deckSlide.id] ?? slideIndex + 1;
-
-        slide.addText(String(globalNumber), {
-          x: x + 0.05,
-          y: y + 0.04,
-          w: 0.18,
-          h: 0.13,
-          bold: true,
-          fontFace: 'Calibri',
-          color: '33475F',
-          fontSize: Math.max(6, 7.2 * scale),
-          fit: 'resize',
-        });
-
-        slide.addText((deckSlide.title || 'Slide').toUpperCase(), {
-          x: x + 0.24,
-          y: y + 0.04,
-          w: cardWidth - 0.29,
-          h: 0.18,
-          bold: true,
-          fontFace: 'Calibri',
-          color: '1F3044',
-          fontSize: Math.max(6.6, 8.2 * scale),
-          fit: 'resize',
-        });
-
-        const bulletLines = deckSlide.bullets
-          .map((bullet) => bullet.trim())
-          .filter(Boolean)
-          .map((bullet) => `• ${bullet}`)
-          .join('\n');
-
-        slide.addText(bulletLines || '•', {
-          x: x + 0.06,
-          y: y + 0.26,
-          w: cardWidth - 0.12,
-          h: Math.max(0.12, cardHeight - 0.3),
-          fontFace: 'Calibri',
-          color: '314A63',
+          margin: cardTextMargin,
           valign: 'top',
-          fontSize: Math.max(6, 7.2 * scale),
           fit: 'shrink',
+          wrap: true,
         });
       });
 
@@ -1388,7 +1396,7 @@ function App() {
 
     const fileName = safeFileName(board.title || 'storyline');
     pptx.writeFile({ fileName: `${fileName}.pptx` });
-  }, [board, scaleToFit]);
+  }, [board]);
 
   const sectionSortableIds = useMemo(
     () => board.sections.map((section) => `section:${section.id}`),
@@ -1454,15 +1462,6 @@ function App() {
                 </select>
               </label>
 
-              <label className="toolbar-field toolbar-toggle inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={scaleToFit}
-                  onChange={(event) => setScaleToFit(event.target.checked)}
-                  className="h-4 w-4"
-                />
-                Scale to Fit
-              </label>
 
               <button
                 type="button"
@@ -1656,7 +1655,7 @@ function App() {
                                                     key={`${slideCard.id}-bullet-${bulletIndex}`}
                                                     className="bullet-row flex items-start gap-1"
                                                   >
-                                                    <span className="bullet-dot pt-1 text-slate-400">•</span>
+                                                    <span className="bullet-dot pt-1 text-slate-400">{'\u2022'}</span>
                                                     <textarea
                                                       ref={registerInputRef(getBulletKey(slideCard.id, bulletIndex))}
                                                       key={`bullet-${slideCard.id}-${bulletIndex}`}
@@ -1753,6 +1752,7 @@ function App() {
 }
 
 export default App;
+
 
 
 
