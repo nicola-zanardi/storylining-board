@@ -16,7 +16,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Copy, Download, FolderKanban, Plus, Trash2 } from 'lucide-react';
+import { Copy, Download, FolderKanban, Plus, Trash2, Upload } from 'lucide-react';
 import PptxGenJS from 'pptxgenjs';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -71,41 +71,125 @@ function createDefaultBoard() {
   };
 }
 
-function createProject(name = 'Untitled Project') {
+function createProject(name = 'Untitled Board') {
+  const board = createDefaultBoard();
+  const boardTitle = (name || '').trim() || board.title || 'Untitled Board';
+
   return {
     id: uuidv4(),
-    name,
-    board: createDefaultBoard(),
+    name: boardTitle,
+    board: {
+      ...board,
+      title: boardTitle,
+    },
   };
+}
+
+function normalizeSlide(slide) {
+  const source = slide && typeof slide === 'object' ? slide : {};
+  const bullets = Array.isArray(source.bullets)
+    ? source.bullets.map((bullet) => (typeof bullet === 'string' ? bullet : String(bullet ?? '')))
+    : [];
+
+  return {
+    id: typeof source.id === 'string' && source.id.trim() ? source.id : uuidv4(),
+    title: typeof source.title === 'string' ? source.title : 'New Slide',
+    bullets: bullets.length > 0 ? bullets : [''],
+  };
+}
+
+function normalizeSection(section) {
+  const source = section && typeof section === 'object' ? section : {};
+  const slides = Array.isArray(source.slides) ? source.slides.map(normalizeSlide) : [];
+
+  return {
+    id: typeof source.id === 'string' && source.id.trim() ? source.id : uuidv4(),
+    title: typeof source.title === 'string' ? source.title : 'Section Title',
+    slides: slides.length > 0 ? slides : [createEmptySlide()],
+  };
+}
+
+function normalizeBoard(board, fallbackTitle = 'Untitled Board') {
+  const source = board && typeof board === 'object' ? board : {};
+  const sections = Array.isArray(source.sections) ? source.sections.map(normalizeSection) : [];
+  const title =
+    typeof source.title === 'string' && source.title.trim()
+      ? source.title.trim()
+      : fallbackTitle.trim() || 'Untitled Board';
+
+  return {
+    title,
+    sections: sections.length > 0 ? sections : [createEmptySection()],
+  };
+}
+
+function normalizeProjectEntry(project, index) {
+  const source = project && typeof project === 'object' ? project : {};
+  const fallback =
+    typeof source.name === 'string' && source.name.trim() ? source.name.trim() : 'Board ' + (index + 1);
+  const board = normalizeBoard(source.board, fallback);
+
+  return {
+    id: typeof source.id === 'string' && source.id.trim() ? source.id : uuidv4(),
+    name: board.title,
+    board,
+  };
+}
+
+function parseBoardFromImportedJson(parsed, fallbackTitle = 'Imported Board') {
+  if (parsed && typeof parsed === 'object') {
+    if (parsed.board && typeof parsed.board === 'object' && !Array.isArray(parsed.board)) {
+      const sourceName =
+        typeof parsed.name === 'string' && parsed.name.trim() ? parsed.name.trim() : fallbackTitle;
+      return normalizeBoard(parsed.board, sourceName);
+    }
+
+    if (Array.isArray(parsed.projects) && parsed.projects.length > 0) {
+      const activeProject =
+        parsed.projects.find((project) => project.id === parsed.activeProjectId) ?? parsed.projects[0];
+      const sourceName =
+        typeof activeProject?.name === 'string' && activeProject.name.trim()
+          ? activeProject.name.trim()
+          : fallbackTitle;
+      return normalizeBoard(activeProject?.board, sourceName);
+    }
+
+    if (Array.isArray(parsed.sections)) {
+      return normalizeBoard(parsed, fallbackTitle);
+    }
+  }
+
+  throw new Error('Invalid board JSON format');
 }
 
 function loadProjectStore() {
   if (typeof window === 'undefined') {
-    const project = createProject('Default Project');
+    const project = createProject('Default Board');
     return { activeProjectId: project.id, projects: [project] };
   }
 
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) {
-      const project = createProject('Default Project');
+      const project = createProject('Default Board');
       return { activeProjectId: project.id, projects: [project] };
     }
 
     const parsed = JSON.parse(raw);
     if (!parsed || !Array.isArray(parsed.projects) || parsed.projects.length === 0) {
-      const project = createProject('Default Project');
+      const project = createProject('Default Board');
       return { activeProjectId: project.id, projects: [project] };
     }
 
-    const activeExists = parsed.projects.some((project) => project.id === parsed.activeProjectId);
+    const projects = parsed.projects.map(normalizeProjectEntry);
+    const activeExists = projects.some((project) => project.id === parsed.activeProjectId);
 
     return {
-      activeProjectId: activeExists ? parsed.activeProjectId : parsed.projects[0].id,
-      projects: parsed.projects,
+      activeProjectId: activeExists ? parsed.activeProjectId : projects[0].id,
+      projects,
     };
   } catch {
-    const project = createProject('Default Project');
+    const project = createProject('Default Board');
     return { activeProjectId: project.id, projects: [project] };
   }
 }
@@ -315,6 +399,7 @@ function App() {
   const [pendingFocus, setPendingFocus] = useState(null);
   const [activeDrag, setActiveDrag] = useState(null);
   const inputRefs = useRef(new Map());
+  const boardImportInputRef = useRef(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -426,12 +511,29 @@ function App() {
     setPendingFocus(getSectionTitleKey(sectionId));
   }, []);
 
-  const updateStoryTitle = useCallback(
-    (nextTitle) => {
-      updateActiveBoard((currentBoard) => ({ ...currentBoard, title: nextTitle }));
-    },
-    [updateActiveBoard],
-  );
+  const updateStoryTitle = useCallback((nextTitle) => {
+    const normalizedTitle = nextTitle.trim() || 'Untitled Board';
+
+    setProjectStore((prev) => {
+      const projectIndex = prev.projects.findIndex((project) => project.id === prev.activeProjectId);
+      if (projectIndex === -1) {
+        return prev;
+      }
+
+      const projects = [...prev.projects];
+      const current = projects[projectIndex];
+      projects[projectIndex] = {
+        ...current,
+        name: normalizedTitle,
+        board: {
+          ...current.board,
+          title: normalizedTitle,
+        },
+      };
+
+      return { ...prev, projects };
+    });
+  }, []);
 
   const updateSectionTitle = useCallback(
     (sectionId, nextTitle) => {
@@ -793,13 +895,13 @@ function App() {
     [addBulletAfter, deleteBullet, insertSlideAfter],
   );
 
-  const handleProjectSelection = useCallback(
+  const handleBoardSelection = useCallback(
     (selection) => {
-      if (selection === '__new_project__') {
-        const name =
-          window.prompt('Project name', `Project ${projectStore.projects.length + 1}`) ||
-          `Project ${projectStore.projects.length + 1}`;
-        const project = createProject(name.trim() || 'Untitled Project');
+      if (selection === '__new_board__') {
+        const nextBoardIndex = projectStore.projects.length + 1;
+        const defaultName = 'Board ' + nextBoardIndex;
+        const name = window.prompt('Board name', defaultName) || defaultName;
+        const project = createProject(name.trim() || defaultName);
 
         setProjectStore((prev) => ({
           activeProjectId: project.id,
@@ -808,24 +910,67 @@ function App() {
         return;
       }
 
-      if (selection === '__rename_project__') {
-        const nextName = window.prompt('Rename project', activeProject.name);
-        if (!nextName || !nextName.trim()) {
-          return;
-        }
+      setProjectStore((prev) => ({ ...prev, activeProjectId: selection }));
+    },
+    [projectStore.projects.length],
+  );
 
-        setProjectStore((prev) => ({
-          ...prev,
-          projects: prev.projects.map((project) =>
-            project.id === prev.activeProjectId ? { ...project, name: nextName.trim() } : project,
-          ),
-        }));
+  const exportBoardJson = useCallback(() => {
+    const payload = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      board,
+    };
+
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
+      type: 'application/json;charset=utf-8',
+    });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = safeFileName(board.title || 'storyline-board') + '.json';
+    link.click();
+    window.URL.revokeObjectURL(url);
+  }, [board]);
+
+  const openBoardImportDialog = useCallback(() => {
+    boardImportInputRef.current?.click();
+  }, []);
+
+  const importBoardFromJson = useCallback(
+    async (event) => {
+      const input = event.target;
+      const file = input.files?.[0];
+      input.value = '';
+
+      if (!file) {
         return;
       }
 
-      setProjectStore((prev) => ({ ...prev, activeProjectId: selection }));
+      try {
+        const text = await file.text();
+        const parsed = JSON.parse(text);
+        const fallbackName =
+          file.name.replace(/\.json$/i, '').trim() ||
+          'Imported Board ' + (projectStore.projects.length + 1);
+        const importedBoard = parseBoardFromImportedJson(parsed, fallbackName);
+
+        const project = {
+          id: uuidv4(),
+          name: importedBoard.title,
+          board: importedBoard,
+        };
+
+        setProjectStore((prev) => ({
+          activeProjectId: project.id,
+          projects: [...prev.projects, project],
+        }));
+      } catch (error) {
+        console.error('Failed to import board JSON:', error);
+        window.alert('Unable to import JSON. Please use a valid board export file.');
+      }
     },
-    [activeProject.name, projectStore.projects.length],
+    [projectStore.projects.length],
   );
 
   const handleDragStart = useCallback((event) => {
@@ -1062,13 +1207,15 @@ function App() {
     const slide = pptx.addSlide();
 
     const margin = 0.28;
-    const sectionGap = 0.12;
-    const sectionWidth = 2.25;
-    const rightGap = 0.2;
+    const sectionGap = 0.18;
+    const sectionWidth = 2.15;
+    const rightGap = 0.24;
     const rightWidth = EXPORT_WIDTH - margin * 2 - sectionWidth - rightGap;
-    const cardGapX = 0.12;
-    const cardGapY = 0.1;
-    const cardPadding = 0.08;
+
+    const lanePadX = 0.12;
+    const lanePadY = 0.1;
+    const cardGapX = 0.14;
+    const cardGapY = 0.14;
 
     const maxSlides = Math.max(1, ...board.sections.map((section) => section.slides.length || 1));
     const columns = Math.min(4, Math.max(1, Math.ceil(Math.sqrt(maxSlides))));
@@ -1076,7 +1223,8 @@ function App() {
     const rawHeights = board.sections.map((section) => {
       const slideCount = Math.max(1, section.slides.length);
       const rows = Math.ceil(slideCount / columns);
-      return Math.max(0.75, rows * 0.72 + (rows - 1) * cardGapY + 0.2);
+      const laneInnerHeight = rows * 0.82 + Math.max(0, rows - 1) * cardGapY;
+      return Math.max(0.86, laneInnerHeight + lanePadY * 2);
     });
 
     const totalRawHeight =
@@ -1117,67 +1265,102 @@ function App() {
       fit: 'resize',
     });
 
-    let cursorY = margin + 0.18;
+    const slideNumberById = buildSlideNumberMap(board.sections);
+
+    let cursorY = margin + 0.22;
 
     board.sections.forEach((section, sectionIndex) => {
       const rawHeight = rawHeights[sectionIndex];
       const sectionHeight = rawHeight * scale;
 
-      slide.addShape(pptx.ShapeType.roundRect, {
+      const laneX = margin + sectionWidth + rightGap;
+      const laneY = cursorY;
+      const laneW = rightWidth;
+      const laneH = sectionHeight;
+
+      slide.addShape(pptx.ShapeType.rect, {
         x: margin,
         y: cursorY,
         w: sectionWidth,
         h: sectionHeight,
-        rectRadius: 0.05,
         line: { color: SECTION_COLOR, pt: 1 },
         fill: { color: SECTION_COLOR },
       });
 
+      slide.addText(`SECTION ${toSectionLabel(sectionIndex)}`, {
+        x: margin + 0.1,
+        y: cursorY + 0.06,
+        w: sectionWidth - 0.2,
+        h: 0.14,
+        bold: true,
+        fontFace: 'Calibri',
+        fontSize: Math.max(6, 7.2 * scale),
+        color: 'D7C8EE',
+        fit: 'resize',
+      });
+
       slide.addText(section.title || 'Section', {
-        x: margin + 0.12,
-        y: cursorY + 0.08,
-        w: sectionWidth - 0.24,
-        h: sectionHeight - 0.16,
+        x: margin + 0.1,
+        y: cursorY + 0.24,
+        w: sectionWidth - 0.2,
+        h: sectionHeight - 0.28,
         color: 'FFFFFF',
         bold: true,
         fontFace: 'Calibri',
         valign: 'top',
-        fontSize: Math.max(8, 12 * scale),
+        fontSize: Math.max(8, 11 * scale),
         fit: 'resize',
       });
 
       const slideCount = Math.max(1, section.slides.length);
       const rows = Math.ceil(slideCount / columns);
-      const cardWidth = (rightWidth - cardGapX * Math.max(0, columns - 1)) / Math.max(1, columns);
+
+      const cardWidth =
+        (laneW - lanePadX * 2 - cardGapX * Math.max(0, columns - 1)) /
+        Math.max(1, columns);
       const cardHeight =
-        (sectionHeight - cardPadding * 2 - cardGapY * Math.max(0, rows - 1)) / Math.max(1, rows);
+        (laneH - lanePadY * 2 - cardGapY * Math.max(0, rows - 1)) /
+        Math.max(1, rows);
 
       section.slides.forEach((deckSlide, slideIndex) => {
         const row = Math.floor(slideIndex / columns);
         const column = slideIndex % columns;
 
-        const x = margin + sectionWidth + rightGap + column * (cardWidth + cardGapX);
-        const y = cursorY + cardPadding + row * (cardHeight + cardGapY);
+        const x = laneX + lanePadX + column * (cardWidth + cardGapX);
+        const y = laneY + lanePadY + row * (cardHeight + cardGapY);
 
-        slide.addShape(pptx.ShapeType.roundRect, {
+        slide.addShape(pptx.ShapeType.rect, {
           x,
           y,
           w: cardWidth,
           h: cardHeight,
-          rectRadius: 0.03,
-          line: { color: CARD_BORDER, pt: 0.6 },
+          line: { color: 'C8D5E2', pt: 0.8 },
           fill: { color: CARD_BG },
         });
 
-        slide.addText(deckSlide.title || 'Slide', {
-          x: x + 0.06,
+        const globalNumber = slideNumberById[deckSlide.id] ?? slideIndex + 1;
+
+        slide.addText(String(globalNumber), {
+          x: x + 0.05,
           y: y + 0.04,
-          w: cardWidth - 0.12,
+          w: 0.18,
+          h: 0.13,
+          bold: true,
+          fontFace: 'Calibri',
+          color: '33475F',
+          fontSize: Math.max(6, 7.2 * scale),
+          fit: 'resize',
+        });
+
+        slide.addText((deckSlide.title || 'Slide').toUpperCase(), {
+          x: x + 0.24,
+          y: y + 0.04,
+          w: cardWidth - 0.29,
           h: 0.18,
           bold: true,
           fontFace: 'Calibri',
-          color: '0F172A',
-          fontSize: Math.max(7, 9.5 * scale),
+          color: '1F3044',
+          fontSize: Math.max(6.6, 8.2 * scale),
           fit: 'resize',
         });
 
@@ -1188,14 +1371,14 @@ function App() {
           .join('\n');
 
         slide.addText(bulletLines || '•', {
-          x: x + 0.07,
-          y: y + 0.22,
-          w: cardWidth - 0.14,
-          h: Math.max(0.15, cardHeight - 0.26),
+          x: x + 0.06,
+          y: y + 0.26,
+          w: cardWidth - 0.12,
+          h: Math.max(0.12, cardHeight - 0.3),
           fontFace: 'Calibri',
-          color: '334155',
+          color: '314A63',
           valign: 'top',
-          fontSize: Math.max(6, 7.8 * scale),
+          fontSize: Math.max(6, 7.2 * scale),
           fit: 'shrink',
         });
       });
@@ -1203,9 +1386,9 @@ function App() {
       cursorY += sectionHeight + sectionGap;
     });
 
-    const fileName = safeFileName(board.title || activeProject.name || 'storyline');
+    const fileName = safeFileName(board.title || 'storyline');
     pptx.writeFile({ fileName: `${fileName}.pptx` });
-  }, [activeProject.name, board, scaleToFit]);
+  }, [board, scaleToFit]);
 
   const sectionSortableIds = useMemo(
     () => board.sections.map((section) => `section:${section.id}`),
@@ -1255,20 +1438,19 @@ function App() {
             <div className="toolbar-actions flex flex-wrap items-center gap-2">
               <label className="toolbar-field flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700">
                 <FolderKanban size={16} />
-                <span className="whitespace-nowrap">Project Manager</span>
+                <span className="whitespace-nowrap">Board Switcher</span>
                 <select
                   value={activeProject.id}
-                  onChange={(event) => handleProjectSelection(event.target.value)}
+                  onChange={(event) => handleBoardSelection(event.target.value)}
                   className="toolbar-select max-w-[220px] bg-transparent text-sm outline-none"
-                  aria-label="Project manager"
+                  aria-label="Board switcher"
                 >
                   {projectStore.projects.map((project) => (
                     <option key={project.id} value={project.id}>
                       {project.name}
                     </option>
                   ))}
-                  <option value="__new_project__">+ New Project</option>
-                  <option value="__rename_project__">Rename Project</option>
+                  <option value="__new_board__">+ New Board</option>
                 </select>
               </label>
 
@@ -1281,6 +1463,32 @@ function App() {
                 />
                 Scale to Fit
               </label>
+
+              <button
+                type="button"
+                onClick={exportBoardJson}
+                className="toolbar-btn inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                <Download size={15} />
+                Export JSON
+              </button>
+
+              <button
+                type="button"
+                onClick={openBoardImportDialog}
+                className="toolbar-btn inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                <Upload size={15} />
+                Import JSON
+              </button>
+
+              <input
+                ref={boardImportInputRef}
+                type="file"
+                accept="application/json,.json"
+                className="hidden"
+                onChange={importBoardFromJson}
+              />
 
               <button
                 type="button"
@@ -1545,6 +1753,9 @@ function App() {
 }
 
 export default App;
+
+
+
 
 
 
