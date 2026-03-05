@@ -139,6 +139,14 @@ body {
   margin-bottom: 0;
   gap: 2px !important;
   align-items: stretch;
+  transition: opacity 120ms ease, box-shadow 120ms ease, filter 120ms ease;
+}
+
+.section-row.is-dragging {
+  opacity: 0.52;
+  filter: saturate(0.94);
+  box-shadow: 0 14px 26px rgba(16, 28, 43, 0.22);
+  z-index: 60;
 }
 
 .section-anchor {

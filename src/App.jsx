@@ -348,8 +348,10 @@ function SortableSectionRow({ sectionId, children }) {
     data: { type: 'section', sectionId },
   });
 
+  const verticalTransform = transform ? { ...transform, x: 0 } : null;
+
   const style = {
-    transform: CSS.Transform.toString(transform),
+    transform: CSS.Transform.toString(verticalTransform),
     transition,
     zIndex: isDragging ? 40 : undefined,
   };
@@ -1412,15 +1414,6 @@ function App() {
       .flatMap((section) => section.slides)
       .find((slideCard) => slideCard.id === activeDrag.slideId) ?? null;
   }, [activeDrag, board.sections]);
-
-  const activeSection = useMemo(() => {
-    if (activeDrag?.type !== 'section') {
-      return null;
-    }
-
-    return board.sections.find((section) => section.id === activeDrag.sectionId) ?? null;
-  }, [activeDrag, board.sections]);
-
   return (
     <div className="ghost-app min-h-screen bg-[radial-gradient(circle_at_top_left,_#ffffff_0%,_#e8eef8_60%,_#dde7f6_100%)] px-6 py-8 text-slate-900">
       <div className="ghost-shell mx-auto max-w-[1400px]">
@@ -1517,11 +1510,11 @@ function App() {
                 return (
                   <Fragment key={section.id}>
                     <SortableSectionRow sectionId={section.id}>
-                      {({ setNodeRef, style, dragHandleProps }) => (
+                      {({ setNodeRef, style, dragHandleProps, isDragging }) => (
                         <section
                           ref={setNodeRef}
                           style={style}
-                          className="section-row group flex items-stretch gap-2"
+                          className={`section-row ${isDragging ? 'is-dragging' : ''} group flex items-stretch gap-2`}
                         >
                           <aside
                             className="section-anchor w-64 self-stretch rounded-xl p-3 text-white shadow-sm"
@@ -1735,15 +1728,6 @@ function App() {
               </article>
             ) : null}
 
-            {activeSection ? (
-              <aside
-                className="section-anchor drag-overlay-section p-3 text-white"
-                style={{ backgroundColor: SECTION_COLOR }}
-              >
-                <span className="section-kicker">Section</span>
-                <div className="section-title-input mt-1">{activeSection.title || 'Section title'}</div>
-              </aside>
-            ) : null}
           </DragOverlay>
         </DndContext>
       </div>
