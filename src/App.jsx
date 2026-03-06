@@ -1,4 +1,4 @@
-﻿import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   DndContext,
   DragOverlay,
@@ -219,6 +219,26 @@ function cleanupBulletsOnCardBlur(bullets) {
   return bullets.filter((text) => text.trim() !== '');
 }
 
+function normalizeBulletIdsDuringEditing(ids, bullets, keepIndex) {
+  const emptyIndexes = bullets
+    .map((text, index) => ({ text, index }))
+    .filter((item) => item.text.trim() === '')
+    .map((item) => item.index);
+
+  if (emptyIndexes.length <= 1) {
+    return ids;
+  }
+
+  const keepEmpty =
+    keepIndex != null && bullets[keepIndex]?.trim() === '' ? keepIndex : emptyIndexes[0];
+
+  return ids.filter((_, index) => bullets[index].trim() !== '' || index === keepEmpty);
+}
+
+function cleanupBulletIdsOnCardBlur(ids, bullets) {
+  return ids.filter((_, index) => bullets[index].trim() !== '');
+}
+
 function deepCloneSection(section) {
   return {
     ...section,
@@ -374,8 +394,8 @@ function SortableSlideSlot({ slideId, sectionId, children }) {
     transform: CSS.Transform.toString(transform),
     transition,
     zIndex: isDragging ? 50 : undefined,
-    width: 'var(--card-w)',
-    flexBasis: 'var(--card-w)',
+    width: '100%',
+    flexBasis: 'auto',
   };
 
   return children({
@@ -399,7 +419,10 @@ function App() {
   const [projectStore, setProjectStore] = useState(loadProjectStore);
   const [pendingFocus, setPendingFocus] = useState(null);
   const [activeDrag, setActiveDrag] = useState(null);
+  const [activeBulletDrag, setActiveBulletDrag] = useState(null);
+  const [bulletDropTarget, setBulletDropTarget] = useState(null);
   const inputRefs = useRef(new Map());
+  const bulletIdsRef = useRef(new Map());
   const boardImportInputRef = useRef(null);
 
   const sensors = useSensors(
@@ -419,6 +442,22 @@ function App() {
 
   const board = activeProject.board;
   const slideNumberById = useMemo(() => buildSlideNumberMap(board.sections), [board.sections]);
+
+  const getBulletIdsForSlide = useCallback((slideId, bullets) => {
+    const stored = bulletIdsRef.current.get(slideId) ?? [];
+    const nextIds = [...stored];
+
+    while (nextIds.length < bullets.length) {
+      nextIds.push(uuidv4());
+    }
+
+    if (nextIds.length > bullets.length) {
+      nextIds.length = bullets.length;
+    }
+
+    bulletIdsRef.current.set(slideId, nextIds);
+    return nextIds;
+  }, []);
 
   useEffect(() => {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(projectStore));
@@ -586,17 +625,24 @@ function App() {
               }
 
               const bullets = slide.bullets.map((text, index) => (index === bulletIndex ? nextText : text));
+              const nextBullets = normalizeBulletsDuringEditing(bullets, bulletIndex);
+              const ids = [...getBulletIdsForSlide(slideId, slide.bullets)];
+
+              bulletIdsRef.current.set(
+                slideId,
+                normalizeBulletIdsDuringEditing(ids, bullets, bulletIndex),
+              );
 
               return {
                 ...slide,
-                bullets: normalizeBulletsDuringEditing(bullets, bulletIndex),
+                bullets: nextBullets,
               };
             }),
           };
         }),
       }));
     },
-    [updateActiveBoard],
+    [getBulletIdsForSlide, updateActiveBoard],
   );
 
   const insertSlideAt = useCallback(
@@ -762,9 +808,18 @@ function App() {
 
               const bullets = [...slide.bullets];
               bullets.splice(bulletIndex + 1, 0, '');
+
+              const ids = [...getBulletIdsForSlide(slideId, slide.bullets)];
+              ids.splice(bulletIndex + 1, 0, uuidv4());
+
+              const nextIds = normalizeBulletIdsDuringEditing(ids, bullets, bulletIndex + 1);
+              const nextBullets = normalizeBulletsDuringEditing(bullets, bulletIndex + 1);
+
+              bulletIdsRef.current.set(slideId, nextIds);
+
               return {
                 ...slide,
-                bullets: normalizeBulletsDuringEditing(bullets, bulletIndex + 1),
+                bullets: nextBullets,
               };
             }),
           };
@@ -773,7 +828,7 @@ function App() {
 
       focusBullet(slideId, bulletIndex + 1);
     },
-    [focusBullet, updateActiveBoard],
+    [focusBullet, getBulletIdsForSlide, updateActiveBoard],
   );
 
   const deleteBullet = useCallback(
@@ -794,6 +849,11 @@ function App() {
 
               const bullets = [...slide.bullets];
               bullets.splice(bulletIndex, 1);
+
+              const ids = [...getBulletIdsForSlide(slideId, slide.bullets)];
+              ids.splice(bulletIndex, 1);
+              bulletIdsRef.current.set(slideId, ids);
+
               return { ...slide, bullets };
             }),
           };
@@ -806,7 +866,48 @@ function App() {
         focusBullet(slideId, bulletIndex - 1);
       }
     },
-    [focusBullet, focusSlideTitle, updateActiveBoard],
+    [focusBullet, focusSlideTitle, getBulletIdsForSlide, updateActiveBoard],
+  );
+
+  const moveBullet = useCallback(
+    (sectionId, slideId, fromIndex, toIndex) => {
+      if (fromIndex === toIndex) {
+        return;
+      }
+
+      let resolvedIndex = Math.max(0, toIndex);
+
+      updateActiveBoard((currentBoard) => ({
+        ...currentBoard,
+        sections: currentBoard.sections.map((section) => {
+          if (section.id !== sectionId) {
+            return section;
+          }
+
+          return {
+            ...section,
+            slides: section.slides.map((slide) => {
+              if (slide.id !== slideId) {
+                return slide;
+              }
+
+              const boundedIndex = Math.max(0, Math.min(toIndex, slide.bullets.length - 1));
+              const ids = [...getBulletIdsForSlide(slideId, slide.bullets)];
+              bulletIdsRef.current.set(slideId, arrayMove(ids, fromIndex, boundedIndex));
+              resolvedIndex = boundedIndex;
+
+              return {
+                ...slide,
+                bullets: arrayMove(slide.bullets, fromIndex, boundedIndex),
+              };
+            }),
+          };
+        }),
+      }));
+
+      focusBullet(slideId, resolvedIndex);
+    },
+    [focusBullet, getBulletIdsForSlide, updateActiveBoard],
   );
 
   const cleanupCardBullets = useCallback(
@@ -825,6 +926,9 @@ function App() {
                 return slide;
               }
 
+              const ids = [...getBulletIdsForSlide(slideId, slide.bullets)];
+              bulletIdsRef.current.set(slideId, cleanupBulletIdsOnCardBlur(ids, slide.bullets));
+
               return {
                 ...slide,
                 bullets: cleanupBulletsOnCardBlur(slide.bullets),
@@ -834,7 +938,7 @@ function App() {
         }),
       }));
     },
-    [updateActiveBoard],
+    [getBulletIdsForSlide, updateActiveBoard],
   );
 
   const handleSlideTitleKeyDown = useCallback(
@@ -882,6 +986,18 @@ function App() {
         return;
       }
 
+      if (event.altKey && event.shiftKey && event.key === 'ArrowUp') {
+        event.preventDefault();
+        moveBullet(sectionId, slideId, bulletIndex, Math.max(0, bulletIndex - 1));
+        return;
+      }
+
+      if (event.altKey && event.shiftKey && event.key === 'ArrowDown') {
+        event.preventDefault();
+        moveBullet(sectionId, slideId, bulletIndex, bulletIndex + 1);
+        return;
+      }
+
       if (event.key === 'Enter') {
         event.preventDefault();
         addBulletAfter(sectionId, slideId, bulletIndex);
@@ -893,8 +1009,47 @@ function App() {
         deleteBullet(sectionId, slideId, bulletIndex);
       }
     },
-    [addBulletAfter, deleteBullet, insertSlideAfter],
+    [addBulletAfter, deleteBullet, insertSlideAfter, moveBullet],
   );
+
+  const handleBulletDragStart = useCallback((sectionId, slideId, bulletIndex, event) => {
+    setActiveBulletDrag({ sectionId, slideId, bulletIndex });
+    setBulletDropTarget({ slideId, bulletIndex });
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', `${slideId}:${bulletIndex}`);
+  }, []);
+
+  const handleBulletDragOver = useCallback(
+    (slideId, bulletIndex, event) => {
+      if (!activeBulletDrag || activeBulletDrag.slideId !== slideId) {
+        return;
+      }
+
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'move';
+      setBulletDropTarget({ slideId, bulletIndex });
+    },
+    [activeBulletDrag],
+  );
+
+  const handleBulletDrop = useCallback(
+    (sectionId, slideId, bulletIndex, event) => {
+      if (!activeBulletDrag || activeBulletDrag.slideId !== slideId) {
+        return;
+      }
+
+      event.preventDefault();
+      moveBullet(sectionId, slideId, activeBulletDrag.bulletIndex, bulletIndex);
+      setActiveBulletDrag(null);
+      setBulletDropTarget(null);
+    },
+    [activeBulletDrag, moveBullet],
+  );
+
+  const handleBulletDragEnd = useCallback(() => {
+    setActiveBulletDrag(null);
+    setBulletDropTarget(null);
+  }, []);
 
   const handleBoardSelection = useCallback(
     (selection) => {
@@ -1416,7 +1571,7 @@ function App() {
   }, [activeDrag, board.sections]);
   return (
     <div className="ghost-app min-h-screen bg-[radial-gradient(circle_at_top_left,_#ffffff_0%,_#e8eef8_60%,_#dde7f6_100%)] px-6 py-8 text-slate-900">
-      <div className="ghost-shell mx-auto max-w-[1400px]">
+      <div className="ghost-shell">
         <header className="ghost-header mb-6 rounded-2xl border border-slate-200/80 bg-white/90 p-6 shadow-sm backdrop-blur">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="min-w-0 flex-1">
@@ -1573,125 +1728,159 @@ function App() {
                                   strategy={rectSortingStrategy}
                                 >
                                   <div className="slide-wrap flex flex-wrap items-start gap-3">
-                                    {section.slides.map((slideCard, slideIndex) => (
-                                      <SortableSlideSlot
-                                        key={slideCard.id}
-                                        slideId={slideCard.id}
-                                        sectionId={section.id}
-                                      >
-                                        {({ setNodeRef: setSlideRef, style: slideStyle, dragHandleProps: slideDragProps, isDragging }) => (
-                                          <div
-                                            ref={setSlideRef}
-                                            style={slideStyle}
-                                            className={`slide-slot ${isDragging ? 'is-dragging' : ''}`}
-                                          >
-                                            <article
-                                              {...slideDragProps}
-                                              onBlurCapture={(event) => {
-                                                const next = event.relatedTarget;
-                                                if (!event.currentTarget.contains(next)) {
-                                                  cleanupCardBullets(section.id, slideCard.id);
-                                                }
-                                              }}
-                                              className="slide-card group/card border p-2"
-                                              style={{ backgroundColor: CARD_BG, borderColor: CARD_BORDER }}
+                                    {section.slides.map((slideCard, slideIndex) => {
+                                      const bulletIds = getBulletIdsForSlide(slideCard.id, slideCard.bullets);
+
+                                      return (
+                                        <SortableSlideSlot
+                                          key={slideCard.id}
+                                          slideId={slideCard.id}
+                                          sectionId={section.id}
+                                        >
+                                          {({ setNodeRef: setSlideRef, style: slideStyle, dragHandleProps: slideDragProps, isDragging }) => (
+                                            <div
+                                              ref={setSlideRef}
+                                              style={slideStyle}
+                                              className={`slide-slot ${isDragging ? 'is-dragging' : ''}`}
                                             >
-                                              <div className="mb-1 flex items-start justify-between gap-1">
-                                                <div className="slide-title-row flex min-w-0 flex-1 items-center gap-2">
-                                                  <span className="slide-number">{slideNumberById[slideCard.id]}</span>
-                                                  <textarea
-                                                    ref={registerInputRef(getSlideTitleKey(slideCard.id))}
-                                                    key={`slide-title-${slideCard.id}`}
-                                                    rows={1}
-                                                    defaultValue={slideCard.title}
-                                                    onInput={handleTextEditorInput}
-                                                    onChange={(event) =>
-                                                      updateSlideTitle(section.id, slideCard.id, event.target.value)
-                                                    }
-                                                    onKeyDown={(event) =>
-                                                      handleSlideTitleKeyDown(
-                                                        event,
-                                                        section.id,
-                                                        slideCard.id,
-                                                        slideCard.bullets.length,
-                                                      )
-                                                    }
-                                                    className="slide-title-input text-editor w-full border-none bg-transparent font-semibold text-slate-900 outline-none placeholder:text-slate-400"
-                                                    placeholder="Slide title"
-                                                    aria-label="Slide title"
-                                                  />
-                                                </div>
-
-                                                <div className="hover-actions slide-actions flex items-center gap-0.5 opacity-0 transition-opacity group-hover/card:opacity-100">
-                                                  <button
-                                                    type="button"
-                                                    onClick={() => duplicateSlide(section.id, slideCard.id)}
-                                                    className="icon-btn p-1 text-slate-500"
-                                                    aria-label="Duplicate slide"
-                                                  >
-                                                    <Copy size={13} />
-                                                  </button>
-                                                  <button
-                                                    type="button"
-                                                    onClick={() => deleteSlide(section.id, slideCard.id)}
-                                                    className="icon-btn p-1 text-slate-500"
-                                                    aria-label="Delete slide"
-                                                  >
-                                                    <Trash2 size={13} />
-                                                  </button>
-                                                </div>
-                                              </div>
-
-                                              <div className="space-y-0.5">
-                                                {slideCard.bullets.map((bullet, bulletIndex) => (
+                                              <article
+                                                onBlurCapture={(event) => {
+                                                  const next = event.relatedTarget;
+                                                  if (!event.currentTarget.contains(next)) {
+                                                    cleanupCardBullets(section.id, slideCard.id);
+                                                  }
+                                                }}
+                                                className="slide-card group/card border p-2"
+                                                style={{ backgroundColor: CARD_BG, borderColor: CARD_BORDER }}
+                                              >
+                                                <div className="mb-1 flex items-start justify-between gap-1">
                                                   <div
-                                                    key={`${slideCard.id}-bullet-${bulletIndex}`}
-                                                    className="bullet-row flex items-start gap-1"
+                                                    {...slideDragProps}
+                                                    className="slide-title-row slide-drag-handle flex min-w-0 flex-1 items-center gap-2"
                                                   >
-                                                    <span className="bullet-dot pt-1 text-slate-400">{'\u2022'}</span>
+                                                    <span className="slide-number">{slideNumberById[slideCard.id]}</span>
                                                     <textarea
-                                                      ref={registerInputRef(getBulletKey(slideCard.id, bulletIndex))}
-                                                      key={`bullet-${slideCard.id}-${bulletIndex}`}
+                                                      ref={registerInputRef(getSlideTitleKey(slideCard.id))}
+                                                      key={`slide-title-${slideCard.id}`}
                                                       rows={1}
-                                                      defaultValue={bullet}
+                                                      defaultValue={slideCard.title}
                                                       onInput={handleTextEditorInput}
                                                       onChange={(event) =>
-                                                        updateBulletText(
-                                                          section.id,
-                                                          slideCard.id,
-                                                          bulletIndex,
-                                                          event.target.value,
-                                                        )
+                                                        updateSlideTitle(section.id, slideCard.id, event.target.value)
                                                       }
                                                       onKeyDown={(event) =>
-                                                        handleBulletKeyDown(
+                                                        handleSlideTitleKeyDown(
                                                           event,
                                                           section.id,
                                                           slideCard.id,
-                                                          bulletIndex,
+                                                          slideCard.bullets.length,
                                                         )
                                                       }
-                                                      className="bullet-input text-editor w-full border-none bg-transparent py-0.5 text-slate-700 outline-none placeholder:text-slate-400"
-                                                      placeholder="Type bullet"
-                                                      aria-label="Slide bullet"
+                                                      className="slide-title-input text-editor w-full border-none bg-transparent font-semibold text-slate-900 outline-none placeholder:text-slate-400"
+                                                      placeholder="Slide title"
+                                                      aria-label="Slide title"
                                                     />
                                                   </div>
-                                                ))}
-                                              </div>
-                                            </article>
 
-                                            <button
-                                              type="button"
-                                              onClick={() => insertSlideAt(section.id, slideIndex + 1)}
-                                              className="slide-insert-btn"
-                                              aria-label="Insert slide"
-                                            >
-                                              <Plus size={12} />
-                                            </button>
-                                          </div>
-                                        )}
-                                      </SortableSlideSlot>
-                                    ))}
+                                                  <div className="hover-actions slide-actions flex items-center gap-0.5 opacity-0 transition-opacity group-hover/card:opacity-100">
+                                                    <button
+                                                      type="button"
+                                                      onClick={() => duplicateSlide(section.id, slideCard.id)}
+                                                      className="icon-btn p-1 text-slate-500"
+                                                      aria-label="Duplicate slide"
+                                                    >
+                                                      <Copy size={13} />
+                                                    </button>
+                                                    <button
+                                                      type="button"
+                                                      onClick={() => deleteSlide(section.id, slideCard.id)}
+                                                      className="icon-btn p-1 text-slate-500"
+                                                      aria-label="Delete slide"
+                                                    >
+                                                      <Trash2 size={13} />
+                                                    </button>
+                                                  </div>
+                                                </div>
+
+                                                <div className="space-y-0.5">
+                                                  {slideCard.bullets.map((bullet, bulletIndex) => (
+                                                    <div
+                                                      key={bulletIds[bulletIndex]}
+                                                      className={`bullet-row ${
+                                                        activeBulletDrag?.slideId === slideCard.id &&
+                                                        activeBulletDrag.bulletIndex === bulletIndex
+                                                          ? 'is-dragging'
+                                                          : ''
+                                                      } ${
+                                                        bulletDropTarget?.slideId === slideCard.id &&
+                                                        bulletDropTarget.bulletIndex === bulletIndex
+                                                          ? 'is-drop-target'
+                                                          : ''
+                                                      }`}
+                                                      onDragOver={(event) =>
+                                                        handleBulletDragOver(slideCard.id, bulletIndex, event)
+                                                      }
+                                                      onDrop={(event) =>
+                                                        handleBulletDrop(section.id, slideCard.id, bulletIndex, event)
+                                                      }
+                                                    >
+                                                      <button
+                                                        type="button"
+                                                        draggable
+                                                        onDragStart={(event) =>
+                                                          handleBulletDragStart(section.id, slideCard.id, bulletIndex, event)
+                                                        }
+                                                        onDragEnd={handleBulletDragEnd}
+                                                        className="bullet-drag-handle"
+                                                        aria-label="Reorder bullet"
+                                                        tabIndex={-1}
+                                                      >
+                                                        {'\u2022'}
+                                                      </button>
+                                                      <textarea
+                                                        ref={registerInputRef(getBulletKey(slideCard.id, bulletIndex))}
+                                                        key={`bullet-${bulletIds[bulletIndex]}`}
+                                                        rows={1}
+                                                        defaultValue={bullet}
+                                                        onInput={handleTextEditorInput}
+                                                        onChange={(event) =>
+                                                          updateBulletText(
+                                                            section.id,
+                                                            slideCard.id,
+                                                            bulletIndex,
+                                                            event.target.value,
+                                                          )
+                                                        }
+                                                        onKeyDown={(event) =>
+                                                          handleBulletKeyDown(
+                                                            event,
+                                                            section.id,
+                                                            slideCard.id,
+                                                            bulletIndex,
+                                                          )
+                                                        }
+                                                        className="bullet-input text-editor w-full border-none bg-transparent py-0.5 text-slate-700 outline-none placeholder:text-slate-400"
+                                                        placeholder="Type bullet"
+                                                        aria-label="Slide bullet"
+                                                      />
+                                                    </div>
+                                                  ))}
+                                                </div>
+                                              </article>
+
+                                              <button
+                                                type="button"
+                                                onClick={() => insertSlideAt(section.id, slideIndex + 1)}
+                                                className="slide-insert-btn"
+                                                aria-label="Insert slide"
+                                              >
+                                                <Plus size={12} />
+                                              </button>
+                                            </div>
+                                          )}
+                                        </SortableSlideSlot>
+                                      );
+                                    })}
                                   </div>
                                 </SortableContext>
                               </div>
@@ -1736,6 +1925,11 @@ function App() {
 }
 
 export default App;
+
+
+
+
+
 
 
 
