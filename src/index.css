@@ -149,6 +149,25 @@ body {
   color: #ffffff;
 }
 
+.export-menu-panel {
+  border-radius: 0;
+}
+
+.export-menu-item {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: #27384d;
+  padding: 0.4rem 0.55rem;
+  text-align: left;
+  font-size: 0.83rem;
+  font-weight: 600;
+}
+
+.export-menu-item:hover {
+  background: #f4f7fc;
+}
+
 .board-sections {
   display: flex;
   flex-direction: column;

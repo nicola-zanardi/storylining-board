@@ -16,7 +16,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Columns3, Copy, Download, FolderKanban, Minus, Plus, Trash2, Upload } from 'lucide-react';
+import { ChevronDown, Columns3, Copy, Download, FolderKanban, Minus, Plus, Trash2, Upload } from 'lucide-react';
 import PptxGenJS from 'pptxgenjs';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -280,6 +280,25 @@ function safeFileName(input) {
     .slice(0, 80);
 }
 
+function escapeHtml(value) {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+function buildExportOutline(board) {
+  return board.sections.map((section) => ({
+    title: section.title?.trim() || 'Section',
+    slides: section.slides.map((slide) => ({
+      title: slide.title?.trim() || 'Slide',
+      bullets: slide.bullets.map((bullet) => bullet.trim()).filter(Boolean),
+    })),
+  }));
+}
+
 function clampBoxesPerRow(input, fallback = 4) {
   const parsed = Number.parseInt(input, 10);
   if (Number.isNaN(parsed)) {
@@ -433,6 +452,8 @@ function App() {
   const [activeDrag, setActiveDrag] = useState(null);
   const [activeBulletDrag, setActiveBulletDrag] = useState(null);
   const [bulletDropTarget, setBulletDropTarget] = useState(null);
+  const [isBulletHidden, setIsBulletHidden] = useState(false);
+  const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
   const [viewportWidth, setViewportWidth] = useState(
     typeof window === 'undefined' ? 1280 : window.innerWidth,
   );
@@ -440,6 +461,7 @@ function App() {
   const bulletIdsRef = useRef(new Map());
   const boardImportInputRef = useRef(null);
   const boxesPerRowInputRef = useRef(null);
+  const exportMenuRef = useRef(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -493,6 +515,21 @@ function App() {
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, []);
+
+  useEffect(() => {
+    if (!isExportMenuOpen) {
+      return undefined;
+    }
+
+    const handlePointerDown = (event) => {
+      if (!exportMenuRef.current?.contains(event.target)) {
+        setIsExportMenuOpen(false);
+      }
+    };
+
+    window.addEventListener('pointerdown', handlePointerDown);
+    return () => window.removeEventListener('pointerdown', handlePointerDown);
+  }, [isExportMenuOpen]);
 
   useEffect(() => {
     if (!pendingFocus) {
@@ -1632,6 +1669,71 @@ function App() {
     pptx.writeFile({ fileName: `${fileName}.pptx` });
   }, [board]);
 
+  const exportToMarkdown = useCallback(() => {
+    const sections = buildExportOutline(board);
+    const lines = [`# ${board.title || 'Storyline Board'}`, ''];
+
+    sections.forEach((section) => {
+      lines.push(`## ${section.title}`);
+      section.slides.forEach((slide) => {
+        lines.push(`- ${slide.title}`);
+        slide.bullets.forEach((bullet) => {
+          lines.push(`  - ${bullet}`);
+        });
+      });
+      lines.push('');
+    });
+
+    const blob = new Blob([lines.join('\n').trimEnd() + '\n'], {
+      type: 'text/markdown;charset=utf-8',
+    });
+
+    const fileName = safeFileName(board.title || 'storyline-board');
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${fileName}.md`;
+    link.click();
+    window.URL.revokeObjectURL(url);
+  }, [board]);
+
+  const exportToWord = useCallback(() => {
+    const sections = buildExportOutline(board);
+    const heading = escapeHtml(board.title || 'Storyline Board');
+
+    const body = sections
+      .map((section) => {
+        const sectionTitle = escapeHtml(section.title);
+        const slideItems = section.slides
+          .map((slide) => {
+            const slideTitle = escapeHtml(slide.title);
+            const subBullets = slide.bullets
+              .map((bullet) => `<li>${escapeHtml(bullet)}</li>`)
+              .join('');
+            const nested = subBullets ? `<ul>${subBullets}</ul>` : '';
+            return `<li>${slideTitle}${nested}</li>`;
+          })
+          .join('');
+
+        return `<h2>${sectionTitle}</h2><ul>${slideItems}</ul>`;
+      })
+      .join('');
+
+    const docHtml = `<!doctype html><html><head><meta charset="utf-8" /><title>${heading}</title></head><body><h1>${heading}</h1>${body}</body></html>`;
+
+    const blob = new Blob([docHtml], {
+      type: 'application/msword;charset=utf-8',
+    });
+
+    const fileName = safeFileName(board.title || 'storyline-board');
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${fileName}.doc`;
+    link.click();
+    window.URL.revokeObjectURL(url);
+  }, [board]);
+
   const sectionSortableIds = useMemo(
     () => board.sections.map((section) => `section:${section.id}`),
     [board.sections],
@@ -1729,6 +1831,15 @@ function App() {
                 </button>
               </label>
 
+              <label className="toolbar-field toolbar-toggle inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={isBulletHidden}
+                  onChange={(event) => setIsBulletHidden(event.target.checked)}
+                />
+                Titles only
+              </label>
+
 
               <button
                 type="button"
@@ -1756,14 +1867,52 @@ function App() {
                 onChange={importBoardFromJson}
               />
 
-              <button
-                type="button"
-                onClick={exportToPptx}
-                className="toolbar-btn toolbar-btn-primary inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
-              >
-                <Download size={16} />
-                Export PPTX
-              </button>
+              <div ref={exportMenuRef} className="export-menu relative">
+                <button
+                  type="button"
+                  onClick={() => setIsExportMenuOpen((open) => !open)}
+                  className="toolbar-btn toolbar-btn-primary inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+                >
+                  <Download size={16} />
+                  Export
+                  <ChevronDown size={14} className={`transition-transform ${isExportMenuOpen ? 'rotate-180' : ''}`} />
+                </button>
+
+                {isExportMenuOpen ? (
+                  <div className="export-menu-panel absolute right-0 z-30 mt-1 min-w-44 border border-slate-200 bg-white p-1 shadow-lg">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        exportToPptx();
+                        setIsExportMenuOpen(false);
+                      }}
+                      className="export-menu-item"
+                    >
+                      Export PPTX
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        exportToWord();
+                        setIsExportMenuOpen(false);
+                      }}
+                      className="export-menu-item"
+                    >
+                      Export Word (.doc)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        exportToMarkdown();
+                        setIsExportMenuOpen(false);
+                      }}
+                      className="export-menu-item"
+                    >
+                      Export Markdown
+                    </button>
+                  </div>
+                ) : null}
+              </div>
             </div>
           </div>
         </header>
@@ -1848,7 +1997,10 @@ function App() {
                                 >
                                   <div
                                     className="slide-wrap"
-                                    style={{ '--boxes-per-row': effectiveBoxesPerRow }}
+                                    style={{
+                                      '--boxes-per-row': effectiveBoxesPerRow,
+                                      '--row-h': isBulletHidden ? '84px' : '144px',
+                                    }}
                                   >
                                     {section.slides.map((slideCard, slideIndex) => {
                                       const bulletIds = getBulletIdsForSlide(slideCard.id, slideCard.bullets);
@@ -1924,7 +2076,7 @@ function App() {
                                                   </div>
                                                 </div>
 
-                                                <div className="space-y-0.5">
+                                                {!isBulletHidden ? <div className="space-y-0.5">
                                                   {slideCard.bullets.map((bullet, bulletIndex) => (
                                                     <div
                                                       key={bulletIds[bulletIndex]}
@@ -1987,7 +2139,7 @@ function App() {
                                                       />
                                                     </div>
                                                   ))}
-                                                </div>
+                                                </div> : null}
                                               </article>
 
                                               <button
@@ -2047,7 +2199,6 @@ function App() {
 }
 
 export default App;
-
 
 
 
