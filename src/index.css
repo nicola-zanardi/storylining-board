@@ -184,6 +184,7 @@ body {
   margin-bottom: 0;
   align-items: stretch;
   transition: opacity 120ms ease, box-shadow 120ms ease, filter 120ms ease;
+  gap: 0px;
 }
 
 .section-row.is-dragging {
