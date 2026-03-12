@@ -16,7 +16,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { ChevronDown, ChevronUp, Columns3, Copy, Download, FolderKanban, Plus, Trash2, Upload } from 'lucide-react';
+import { Columns3, Copy, Download, FolderKanban, Minus, Plus, Trash2, Upload } from 'lucide-react';
 import PptxGenJS from 'pptxgenjs';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -433,6 +433,9 @@ function App() {
   const [activeDrag, setActiveDrag] = useState(null);
   const [activeBulletDrag, setActiveBulletDrag] = useState(null);
   const [bulletDropTarget, setBulletDropTarget] = useState(null);
+  const [viewportWidth, setViewportWidth] = useState(
+    typeof window === 'undefined' ? 1280 : window.innerWidth,
+  );
   const inputRefs = useRef(new Map());
   const bulletIdsRef = useRef(new Map());
   const boardImportInputRef = useRef(null);
@@ -455,6 +458,14 @@ function App() {
 
   const board = activeProject.board;
   const boxesPerRow = clampBoxesPerRow(board.boxesPerRow, 4);
+  const autoMaxBoxesPerRow = useMemo(() => {
+    const sectionAnchorWidth = viewportWidth <= 900 ? 0 : 198;
+    const gutters = viewportWidth <= 900 ? 40 : 92;
+    const laneWidth = Math.max(260, viewportWidth - sectionAnchorWidth - gutters);
+    const minCardWidth = viewportWidth <= 900 ? 190 : 172;
+    return Math.min(8, Math.max(1, Math.floor(laneWidth / minCardWidth)));
+  }, [viewportWidth]);
+  const effectiveBoxesPerRow = Math.min(boxesPerRow, autoMaxBoxesPerRow);
   const slideNumberById = useMemo(() => buildSlideNumberMap(board.sections), [board.sections]);
 
   const getBulletIdsForSlide = useCallback((slideId, bullets) => {
@@ -476,6 +487,12 @@ function App() {
   useEffect(() => {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(projectStore));
   }, [projectStore]);
+
+  useEffect(() => {
+    const onResize = () => setViewportWidth(window.innerWidth);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
   useEffect(() => {
     if (!pendingFocus) {
@@ -1641,9 +1658,17 @@ function App() {
                 </select>
               </label>
 
-              <label className="toolbar-field toolbar-number-control flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2 py-1 text-sm text-slate-700">
+              <label className="toolbar-field toolbar-number-control flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2 py-1 text-sm text-slate-700">
                 <Columns3 size={16} aria-hidden="true" />
                 <span className="sr-only">Boxes per row</span>
+                <button
+                  type="button"
+                  onClick={() => nudgeBoxesPerRow(-1)}
+                  className="toolbar-stepper-btn toolbar-side-btn inline-flex items-center justify-center text-slate-700 hover:bg-slate-100"
+                  aria-label="Decrease boxes per row"
+                >
+                  <Minus size={13} />
+                </button>
                 <input
                   ref={boxesPerRowInputRef}
                   key={`boxes-per-row-${activeProject.id}`}
@@ -1665,24 +1690,14 @@ function App() {
                   className="toolbar-select toolbar-number-input bg-transparent text-center text-sm outline-none"
                   aria-label="Boxes per row"
                 />
-                <div className="toolbar-stepper flex flex-col overflow-hidden rounded-sm border border-slate-300/90 bg-slate-50">
-                  <button
-                    type="button"
-                    onClick={() => nudgeBoxesPerRow(1)}
-                    className="toolbar-stepper-btn inline-flex items-center justify-center text-slate-600 hover:bg-slate-100"
-                    aria-label="Increase boxes per row"
-                  >
-                    <ChevronUp size={11} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => nudgeBoxesPerRow(-1)}
-                    className="toolbar-stepper-btn inline-flex items-center justify-center border-t border-slate-300/90 text-slate-600 hover:bg-slate-100"
-                    aria-label="Decrease boxes per row"
-                  >
-                    <ChevronDown size={11} />
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => nudgeBoxesPerRow(1)}
+                  className="toolbar-stepper-btn toolbar-side-btn inline-flex items-center justify-center text-slate-700 hover:bg-slate-100"
+                  aria-label="Increase boxes per row"
+                >
+                  <Plus size={13} />
+                </button>
               </label>
 
 
@@ -1804,7 +1819,7 @@ function App() {
                                 >
                                   <div
                                     className="slide-wrap"
-                                    style={{ '--boxes-per-row': boxesPerRow }}
+                                    style={{ '--boxes-per-row': effectiveBoxesPerRow }}
                                   >
                                     {section.slides.map((slideCard, slideIndex) => {
                                       const bulletIds = getBulletIdsForSlide(slideCard.id, slideCard.bullets);
@@ -2003,7 +2018,6 @@ function App() {
 }
 
 export default App;
-
 
 
 

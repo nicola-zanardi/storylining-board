@@ -117,23 +117,26 @@ body {
 
 .toolbar-number-control {
   min-height: 34px;
+  height: 34px;
 }
 
 .toolbar-number-input {
   min-width: 0;
-  width: 1.7rem;
+  width: 1.5rem;
   line-height: 1;
   padding: 0;
 }
 
-.toolbar-stepper {
-  width: 0.95rem;
+.toolbar-stepper-btn {
+  width: 1.2rem;
+  height: 1.2rem;
+  padding: 0;
+  border-radius: 4px;
 }
 
-.toolbar-stepper-btn {
-  width: 100%;
-  height: 0.78rem;
-  padding: 0;
+.toolbar-side-btn {
+  border: 1px solid #cad7e4;
+  background: #f7fafe;
 }
 
 .toolbar-toggle input {
