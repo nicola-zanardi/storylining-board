@@ -48,6 +48,7 @@ function createEmptySection(overrides = {}) {
 function createDefaultBoard() {
   return {
     title: 'Storyline Board',
+    boxesPerRow: 4,
     sections: [
       createEmptySection({
         title: 'Context',
@@ -119,6 +120,7 @@ function normalizeBoard(board, fallbackTitle = 'Untitled Board') {
 
   return {
     title,
+    boxesPerRow: Math.min(8, Math.max(1, Number.parseInt(source.boxesPerRow, 10) || 4)),
     sections: sections.length > 0 ? sections : [createEmptySection()],
   };
 }
@@ -441,6 +443,7 @@ function App() {
   );
 
   const board = activeProject.board;
+  const boxesPerRow = Math.min(8, Math.max(1, Number.parseInt(board.boxesPerRow, 10) || 4));
   const slideNumberById = useMemo(() => buildSlideNumberMap(board.sections), [board.sections]);
 
   const getBulletIdsForSlide = useCallback((slideId, bullets) => {
@@ -574,6 +577,17 @@ function App() {
       return { ...prev, projects };
     });
   }, []);
+
+  const updateBoxesPerRow = useCallback(
+    (nextValue) => {
+      const parsed = Math.min(8, Math.max(1, Number.parseInt(nextValue, 10) || 4));
+      updateActiveBoard((currentBoard) => ({
+        ...currentBoard,
+        boxesPerRow: parsed,
+      }));
+    },
+    [updateActiveBoard],
+  );
 
   const updateSectionTitle = useCallback(
     (sectionId, nextTitle) => {
@@ -1375,22 +1389,7 @@ function App() {
     const sectionTextMargin = [4, 7, 4, 7];
     const cardTextMargin = [4, 5, 4, 6];
 
-    const maxSlidesInSection = Math.max(1, ...board.sections.map((section) => section.slides.length || 1));
-    const totalSlides = board.sections.reduce(
-      (sum, section) => sum + Math.max(1, section.slides.length || 0),
-      0,
-    );
-
-    let columns = Math.min(6, Math.max(1, Math.ceil(Math.sqrt(maxSlidesInSection))));
-    if (totalSlides >= 12) {
-      columns = Math.max(columns, 4);
-    }
-    if (totalSlides >= 20 || maxSlidesInSection >= 18) {
-      columns = Math.max(columns, 5);
-    }
-    if (totalSlides >= 30 || maxSlidesInSection >= 30) {
-      columns = 6;
-    }
+    const columns = Math.min(8, Math.max(1, Number.parseInt(board.boxesPerRow, 10) || 4));
 
     const rawHeights = board.sections.map((section) => {
       const slideCount = Math.max(1, section.slides.length);
@@ -1570,7 +1569,7 @@ function App() {
       .find((slideCard) => slideCard.id === activeDrag.slideId) ?? null;
   }, [activeDrag, board.sections]);
   return (
-    <div className="ghost-app min-h-screen bg-[radial-gradient(circle_at_top_left,_#ffffff_0%,_#e8eef8_60%,_#dde7f6_100%)] px-6 py-8 text-slate-900">
+    <div className="ghost-app min-h-screen w-full bg-[radial-gradient(circle_at_top_left,_#ffffff_0%,_#e8eef8_60%,_#dde7f6_100%)] px-4 py-4 text-slate-900">
       <div className="ghost-shell">
         <header className="ghost-header mb-6 rounded-2xl border border-slate-200/80 bg-white/90 p-6 shadow-sm backdrop-blur">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -1607,6 +1606,22 @@ function App() {
                     </option>
                   ))}
                   <option value="__new_board__">+ New Board</option>
+                </select>
+              </label>
+
+              <label className="toolbar-field flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700">
+                <span className="whitespace-nowrap">Boxes / row</span>
+                <select
+                  value={boxesPerRow}
+                  onChange={(event) => updateBoxesPerRow(event.target.value)}
+                  className="toolbar-select max-w-[90px] bg-transparent text-sm outline-none"
+                  aria-label="Boxes per row"
+                >
+                  {Array.from({ length: 8 }, (_, index) => index + 1).map((value) => (
+                    <option key={value} value={value}>
+                      {value}
+                    </option>
+                  ))}
                 </select>
               </label>
 
@@ -1727,7 +1742,10 @@ function App() {
                                   items={slideSortableIds}
                                   strategy={rectSortingStrategy}
                                 >
-                                  <div className="slide-wrap flex flex-wrap items-start gap-3">
+                                  <div
+                                    className="slide-wrap"
+                                    style={{ '--boxes-per-row': boxesPerRow }}
+                                  >
                                     {section.slides.map((slideCard, slideIndex) => {
                                       const bulletIds = getBulletIdsForSlide(slideCard.id, slideCard.bullets);
 
@@ -1925,8 +1943,6 @@ function App() {
 }
 
 export default App;
-
-
 
 
 
