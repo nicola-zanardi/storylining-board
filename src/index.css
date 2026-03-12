@@ -182,7 +182,6 @@ body {
   display: flex;
   min-height: var(--row-h);
   margin-bottom: 0;
-  gap: 2px !important;
   align-items: stretch;
   transition: opacity 120ms ease, box-shadow 120ms ease, filter 120ms ease;
 }
@@ -263,7 +262,7 @@ body {
   flex-grow: 1;
   min-width: 0;
   border: 1px solid var(--line);
-  padding: 0.08rem !important;
+  padding: 0 !important;
   overflow: hidden;
   background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
 }
