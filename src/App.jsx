@@ -541,17 +541,46 @@ function App() {
     autoResizeTextarea(event.currentTarget);
   }, []);
 
+  const resizeAllTextEditors = useCallback(() => {
+    inputRefs.current.forEach((node) => {
+      if (node?.tagName === 'TEXTAREA') {
+        autoResizeTextarea(node);
+      }
+    });
+  }, []);
+
   useEffect(() => {
     const id = window.requestAnimationFrame(() => {
-      inputRefs.current.forEach((node) => {
-        if (node?.tagName === 'TEXTAREA') {
-          autoResizeTextarea(node);
-        }
-      });
+      resizeAllTextEditors();
     });
 
     return () => window.cancelAnimationFrame(id);
-  }, [board, activeProject.id]);
+  }, [activeProject.id, board, resizeAllTextEditors]);
+
+  useEffect(() => {
+    let frameId = 0;
+
+    const scheduleResize = () => {
+      if (frameId) {
+        window.cancelAnimationFrame(frameId);
+      }
+
+      frameId = window.requestAnimationFrame(() => {
+        resizeAllTextEditors();
+      });
+    };
+
+    window.addEventListener('resize', scheduleResize);
+    window.visualViewport?.addEventListener('resize', scheduleResize);
+
+    return () => {
+      window.removeEventListener('resize', scheduleResize);
+      window.visualViewport?.removeEventListener('resize', scheduleResize);
+      if (frameId) {
+        window.cancelAnimationFrame(frameId);
+      }
+    };
+  }, [resizeAllTextEditors]);
 
   const updateActiveBoard = useCallback((updater) => {
     setProjectStore((prev) => {
@@ -2018,7 +2047,6 @@ function App() {
 }
 
 export default App;
-
 
 
 
