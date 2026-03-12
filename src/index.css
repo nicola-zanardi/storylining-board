@@ -35,7 +35,8 @@ body {
 
 .ghost-app {
   min-height: 100vh;
-  padding: 0.95rem !important;
+  width: 100%;
+  padding: 1rem !important;
 }
 
 .ghost-shell {
@@ -114,6 +115,30 @@ body {
   color: #27384d;
 }
 
+.toolbar-number-control {
+  min-height: 34px;
+  height: 34px;
+}
+
+.toolbar-number-input {
+  min-width: 0;
+  width: 1.5rem;
+  line-height: 1;
+  padding: 0;
+}
+
+.toolbar-stepper-btn {
+  width: 1.2rem;
+  height: 1.2rem;
+  padding: 0;
+  border-radius: 4px;
+}
+
+.toolbar-side-btn {
+  border: 1px solid #cad7e4;
+  background: #f7fafe;
+}
+
 .toolbar-toggle input {
   accent-color: var(--deep-purple);
 }
@@ -122,6 +147,25 @@ body {
   background: linear-gradient(180deg, var(--deep-purple-soft), var(--deep-purple));
   border-color: #3d1962;
   color: #ffffff;
+}
+
+.export-menu-panel {
+  border-radius: 0;
+}
+
+.export-menu-item {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: #27384d;
+  padding: 0.4rem 0.55rem;
+  text-align: left;
+  font-size: 0.83rem;
+  font-weight: 600;
+}
+
+.export-menu-item:hover {
+  background: #f4f7fc;
 }
 
 .board-sections {
@@ -152,6 +196,7 @@ body {
 
 .section-anchor {
   width: 194px !important;
+  min-height: var(--row-h);
   min-width: 194px;
   flex-shrink: 0;
   border: 1px solid #3d1a62;
@@ -181,11 +226,44 @@ body {
   color: rgba(255, 255, 255, 0.7);
 }
 
+
+.section-row.titles-only .section-anchor {
+  padding: 0.45rem !important;
+}
+
+.section-row.titles-only .section-kicker {
+  font-size: 0.56rem !important;
+  letter-spacing: 0.1em;
+}
+
+.section-row.titles-only .section-title-input {
+  margin-top: 0.08rem;
+  font-size: 0.9rem !important;
+  line-height: 1.05;
+}
+
+.section-row.titles-only .slide-card {
+  padding: 0.5rem !important;
+}
+
+.section-row.titles-only .slide-title-row {
+  column-gap: 0.2rem;
+}
+
+.section-row.titles-only .slide-number {
+  padding-top: 0.03rem;
+}
+
+.section-row.titles-only .slide-title-input {
+  margin-bottom: 0;
+  font-size: 0.82rem !important;
+  line-height: 1.12;
+}
 .section-lane {
   flex-grow: 1;
   min-width: 0;
   border: 1px solid var(--line);
-  padding: 0 !important;
+  padding: 0.08rem !important;
   overflow: hidden;
   background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
 }
@@ -196,9 +274,10 @@ body {
 
 .slide-wrap {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(var(--card-w), 100%), 1fr));
+  grid-template-columns: repeat(var(--boxes-per-row, 4), minmax(0, 1fr));
   grid-auto-rows: minmax(var(--row-h), auto);
   align-items: stretch;
+  width: 100%;
 }
 
 .slide-slot {
@@ -512,6 +591,3 @@ body {
     transform: none;
   }
 }
-
-
-
