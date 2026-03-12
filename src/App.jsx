@@ -16,7 +16,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Copy, Download, FolderKanban, Plus, Trash2, Upload } from 'lucide-react';
+import { Columns3, Copy, Download, FolderKanban, Plus, Trash2, Upload } from 'lucide-react';
 import PptxGenJS from 'pptxgenjs';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -1592,8 +1592,8 @@ function App() {
 
             <div className="toolbar-actions flex flex-wrap items-center gap-2">
               <label className="toolbar-field flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700">
-                <FolderKanban size={16} />
-                <span className="whitespace-nowrap">Board Switcher</span>
+                <FolderKanban size={16} aria-hidden="true" />
+                <span className="sr-only">Board switcher</span>
                 <select
                   value={activeProject.id}
                   onChange={(event) => handleBoardSelection(event.target.value)}
@@ -1610,19 +1610,16 @@ function App() {
               </label>
 
               <label className="toolbar-field flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700">
-                <span className="whitespace-nowrap">Boxes / row</span>
-                <select
-                  value={boxesPerRow}
+                <Columns3 size={16} aria-hidden="true" />
+                <span className="sr-only">Boxes per row</span>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={String(boxesPerRow)}
                   onChange={(event) => updateBoxesPerRow(event.target.value)}
                   className="toolbar-select max-w-[90px] bg-transparent text-sm outline-none"
                   aria-label="Boxes per row"
-                >
-                  {Array.from({ length: 8 }, (_, index) => index + 1).map((value) => (
-                    <option key={value} value={value}>
-                      {value}
-                    </option>
-                  ))}
-                </select>
+                />
               </label>
 
 
