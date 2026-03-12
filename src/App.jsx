@@ -16,7 +16,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Copy, Download, FolderKanban, Plus, Trash2, Upload } from 'lucide-react';
+import { Columns3, Copy, Download, FolderKanban, Minus, Plus, Trash2, Upload } from 'lucide-react';
 import PptxGenJS from 'pptxgenjs';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -48,6 +48,7 @@ function createEmptySection(overrides = {}) {
 function createDefaultBoard() {
   return {
     title: 'Storyline Board',
+    boxesPerRow: 4,
     sections: [
       createEmptySection({
         title: 'Context',
@@ -119,6 +120,7 @@ function normalizeBoard(board, fallbackTitle = 'Untitled Board') {
 
   return {
     title,
+    boxesPerRow: clampBoxesPerRow(source.boxesPerRow, 4),
     sections: sections.length > 0 ? sections : [createEmptySection()],
   };
 }
@@ -277,6 +279,16 @@ function safeFileName(input) {
     .replace(/\s+/g, '_')
     .slice(0, 80);
 }
+
+function clampBoxesPerRow(input, fallback = 4) {
+  const parsed = Number.parseInt(input, 10);
+  if (Number.isNaN(parsed)) {
+    return fallback;
+  }
+
+  return Math.min(8, Math.max(1, parsed));
+}
+
 function autoResizeTextarea(node) {
   if (!node) {
     return;
@@ -421,9 +433,13 @@ function App() {
   const [activeDrag, setActiveDrag] = useState(null);
   const [activeBulletDrag, setActiveBulletDrag] = useState(null);
   const [bulletDropTarget, setBulletDropTarget] = useState(null);
+  const [viewportWidth, setViewportWidth] = useState(
+    typeof window === 'undefined' ? 1280 : window.innerWidth,
+  );
   const inputRefs = useRef(new Map());
   const bulletIdsRef = useRef(new Map());
   const boardImportInputRef = useRef(null);
+  const boxesPerRowInputRef = useRef(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -441,6 +457,15 @@ function App() {
   );
 
   const board = activeProject.board;
+  const boxesPerRow = clampBoxesPerRow(board.boxesPerRow, 4);
+  const autoMaxBoxesPerRow = useMemo(() => {
+    const sectionAnchorWidth = viewportWidth <= 900 ? 0 : 198;
+    const gutters = viewportWidth <= 900 ? 40 : 92;
+    const laneWidth = Math.max(260, viewportWidth - sectionAnchorWidth - gutters);
+    const minCardWidth = viewportWidth <= 900 ? 190 : 172;
+    return Math.min(8, Math.max(1, Math.floor(laneWidth / minCardWidth)));
+  }, [viewportWidth]);
+  const effectiveBoxesPerRow = Math.min(boxesPerRow, autoMaxBoxesPerRow);
   const slideNumberById = useMemo(() => buildSlideNumberMap(board.sections), [board.sections]);
 
   const getBulletIdsForSlide = useCallback((slideId, bullets) => {
@@ -462,6 +487,12 @@ function App() {
   useEffect(() => {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(projectStore));
   }, [projectStore]);
+
+  useEffect(() => {
+    const onResize = () => setViewportWidth(window.innerWidth);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
   useEffect(() => {
     if (!pendingFocus) {
@@ -510,17 +541,46 @@ function App() {
     autoResizeTextarea(event.currentTarget);
   }, []);
 
+  const resizeAllTextEditors = useCallback(() => {
+    inputRefs.current.forEach((node) => {
+      if (node?.tagName === 'TEXTAREA') {
+        autoResizeTextarea(node);
+      }
+    });
+  }, []);
+
   useEffect(() => {
     const id = window.requestAnimationFrame(() => {
-      inputRefs.current.forEach((node) => {
-        if (node?.tagName === 'TEXTAREA') {
-          autoResizeTextarea(node);
-        }
-      });
+      resizeAllTextEditors();
     });
 
     return () => window.cancelAnimationFrame(id);
-  }, [board, activeProject.id]);
+  }, [activeProject.id, board, resizeAllTextEditors]);
+
+  useEffect(() => {
+    let frameId = 0;
+
+    const scheduleResize = () => {
+      if (frameId) {
+        window.cancelAnimationFrame(frameId);
+      }
+
+      frameId = window.requestAnimationFrame(() => {
+        resizeAllTextEditors();
+      });
+    };
+
+    window.addEventListener('resize', scheduleResize);
+    window.visualViewport?.addEventListener('resize', scheduleResize);
+
+    return () => {
+      window.removeEventListener('resize', scheduleResize);
+      window.visualViewport?.removeEventListener('resize', scheduleResize);
+      if (frameId) {
+        window.cancelAnimationFrame(frameId);
+      }
+    };
+  }, [resizeAllTextEditors]);
 
   const updateActiveBoard = useCallback((updater) => {
     setProjectStore((prev) => {
@@ -574,6 +634,38 @@ function App() {
       return { ...prev, projects };
     });
   }, []);
+
+  const updateBoxesPerRow = useCallback(
+    (nextValue, fallback = 4) => {
+      const parsed = clampBoxesPerRow(nextValue, fallback);
+      updateActiveBoard((currentBoard) => ({
+        ...currentBoard,
+        boxesPerRow: parsed,
+      }));
+      return parsed;
+    },
+    [updateActiveBoard],
+  );
+
+  const commitBoxesPerRowInput = useCallback(() => {
+    const rawValue = boxesPerRowInputRef.current?.value ?? String(boxesPerRow);
+    const committed = updateBoxesPerRow(rawValue, boxesPerRow);
+
+    if (boxesPerRowInputRef.current) {
+      boxesPerRowInputRef.current.value = String(committed);
+    }
+  }, [boxesPerRow, updateBoxesPerRow]);
+
+  const nudgeBoxesPerRow = useCallback(
+    (delta) => {
+      const next = clampBoxesPerRow(boxesPerRow + delta, boxesPerRow);
+      updateBoxesPerRow(next, boxesPerRow);
+      if (boxesPerRowInputRef.current) {
+        boxesPerRowInputRef.current.value = String(next);
+      }
+    },
+    [boxesPerRow, updateBoxesPerRow],
+  );
 
   const updateSectionTitle = useCallback(
     (sectionId, nextTitle) => {
@@ -1375,22 +1467,7 @@ function App() {
     const sectionTextMargin = [4, 7, 4, 7];
     const cardTextMargin = [4, 5, 4, 6];
 
-    const maxSlidesInSection = Math.max(1, ...board.sections.map((section) => section.slides.length || 1));
-    const totalSlides = board.sections.reduce(
-      (sum, section) => sum + Math.max(1, section.slides.length || 0),
-      0,
-    );
-
-    let columns = Math.min(6, Math.max(1, Math.ceil(Math.sqrt(maxSlidesInSection))));
-    if (totalSlides >= 12) {
-      columns = Math.max(columns, 4);
-    }
-    if (totalSlides >= 20 || maxSlidesInSection >= 18) {
-      columns = Math.max(columns, 5);
-    }
-    if (totalSlides >= 30 || maxSlidesInSection >= 30) {
-      columns = 6;
-    }
+    const columns = clampBoxesPerRow(board.boxesPerRow, 4);
 
     const rawHeights = board.sections.map((section) => {
       const slideCount = Math.max(1, section.slides.length);
@@ -1570,7 +1647,7 @@ function App() {
       .find((slideCard) => slideCard.id === activeDrag.slideId) ?? null;
   }, [activeDrag, board.sections]);
   return (
-    <div className="ghost-app min-h-screen bg-[radial-gradient(circle_at_top_left,_#ffffff_0%,_#e8eef8_60%,_#dde7f6_100%)] px-6 py-8 text-slate-900">
+    <div className="ghost-app min-h-screen w-full bg-[radial-gradient(circle_at_top_left,_#ffffff_0%,_#e8eef8_60%,_#dde7f6_100%)] px-4 py-4 text-slate-900">
       <div className="ghost-shell">
         <header className="ghost-header mb-6 rounded-2xl border border-slate-200/80 bg-white/90 p-6 shadow-sm backdrop-blur">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -1593,8 +1670,8 @@ function App() {
 
             <div className="toolbar-actions flex flex-wrap items-center gap-2">
               <label className="toolbar-field flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700">
-                <FolderKanban size={16} />
-                <span className="whitespace-nowrap">Board Switcher</span>
+                <FolderKanban size={16} aria-hidden="true" />
+                <span className="sr-only">Board switcher</span>
                 <select
                   value={activeProject.id}
                   onChange={(event) => handleBoardSelection(event.target.value)}
@@ -1608,6 +1685,48 @@ function App() {
                   ))}
                   <option value="__new_board__">+ New Board</option>
                 </select>
+              </label>
+
+              <label className="toolbar-field toolbar-number-control flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2 py-1 text-sm text-slate-700">
+                <Columns3 size={16} aria-hidden="true" />
+                <span className="sr-only">Boxes per row</span>
+                <button
+                  type="button"
+                  onClick={() => nudgeBoxesPerRow(-1)}
+                  className="toolbar-stepper-btn toolbar-side-btn inline-flex items-center justify-center text-slate-700 hover:bg-slate-100"
+                  aria-label="Decrease boxes per row"
+                >
+                  <Minus size={13} />
+                </button>
+                <input
+                  ref={boxesPerRowInputRef}
+                  key={`boxes-per-row-${activeProject.id}`}
+                  type="text"
+                  inputMode="numeric"
+                  defaultValue={String(boxesPerRow)}
+                  onChange={(event) => {
+                    const raw = event.target.value;
+                    if (raw !== '' && !/^\d{1,2}$/.test(raw)) {
+                      event.target.value = raw.replace(/\D/g, '').slice(0, 2);
+                    }
+                  }}
+                  onBlur={commitBoxesPerRowInput}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.currentTarget.blur();
+                    }
+                  }}
+                  className="toolbar-select toolbar-number-input bg-transparent text-center text-sm outline-none"
+                  aria-label="Boxes per row"
+                />
+                <button
+                  type="button"
+                  onClick={() => nudgeBoxesPerRow(1)}
+                  className="toolbar-stepper-btn toolbar-side-btn inline-flex items-center justify-center text-slate-700 hover:bg-slate-100"
+                  aria-label="Increase boxes per row"
+                >
+                  <Plus size={13} />
+                </button>
               </label>
 
 
@@ -1727,7 +1846,10 @@ function App() {
                                   items={slideSortableIds}
                                   strategy={rectSortingStrategy}
                                 >
-                                  <div className="slide-wrap flex flex-wrap items-start gap-3">
+                                  <div
+                                    className="slide-wrap"
+                                    style={{ '--boxes-per-row': effectiveBoxesPerRow }}
+                                  >
                                     {section.slides.map((slideCard, slideIndex) => {
                                       const bulletIds = getBulletIdsForSlide(slideCard.id, slideCard.bullets);
 
@@ -1925,14 +2047,6 @@ function App() {
 }
 
 export default App;
-
-
-
-
-
-
-
-
 
 
 

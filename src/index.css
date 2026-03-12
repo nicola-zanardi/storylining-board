@@ -35,7 +35,8 @@ body {
 
 .ghost-app {
   min-height: 100vh;
-  padding: 0.95rem !important;
+  width: 100%;
+  padding: 1rem !important;
 }
 
 .ghost-shell {
@@ -114,6 +115,30 @@ body {
   color: #27384d;
 }
 
+.toolbar-number-control {
+  min-height: 34px;
+  height: 34px;
+}
+
+.toolbar-number-input {
+  min-width: 0;
+  width: 1.5rem;
+  line-height: 1;
+  padding: 0;
+}
+
+.toolbar-stepper-btn {
+  width: 1.2rem;
+  height: 1.2rem;
+  padding: 0;
+  border-radius: 4px;
+}
+
+.toolbar-side-btn {
+  border: 1px solid #cad7e4;
+  background: #f7fafe;
+}
+
 .toolbar-toggle input {
   accent-color: var(--deep-purple);
 }
@@ -185,7 +210,7 @@ body {
   flex-grow: 1;
   min-width: 0;
   border: 1px solid var(--line);
-  padding: 0 !important;
+  padding: 0.08rem !important;
   overflow: hidden;
   background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
 }
@@ -196,10 +221,11 @@ body {
 
 .slide-wrap {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(var(--card-w), 100%), 1fr));
+  grid-template-columns: repeat(var(--boxes-per-row, 4), minmax(0, 1fr));
   grid-auto-rows: minmax(var(--row-h), auto);
   align-items: stretch;
   gap: 2px;
+  width: 100%;
 }
 
 .slide-slot {
@@ -514,6 +540,3 @@ body {
     transform: none;
   }
 }
-
-
-
