@@ -1751,7 +1751,7 @@ function App() {
   return (
     <div className="ghost-app min-h-screen w-full bg-[radial-gradient(circle_at_top_left,_#ffffff_0%,_#e8eef8_60%,_#dde7f6_100%)] px-4 py-4 text-slate-900">
       <div className="ghost-shell">
-        <header className="ghost-header mb-6 rounded-2xl border border-slate-200/80 bg-white/90 p-6 shadow-sm backdrop-blur">
+        <header className="ghost-header relative z-40 mb-6 overflow-visible rounded-2xl border border-slate-200/80 bg-white/90 p-6 shadow-sm backdrop-blur">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="min-w-0 flex-1">
               <textarea
@@ -1879,7 +1879,7 @@ function App() {
                 </button>
 
                 {isExportMenuOpen ? (
-                  <div className="export-menu-panel absolute right-0 z-30 mt-1 min-w-44 border border-slate-200 bg-white p-1 shadow-lg">
+                  <div className="export-menu-panel absolute right-0 z-[120] mt-1 min-w-44 border border-slate-200 bg-white p-1 shadow-lg">
                     <button
                       type="button"
                       onClick={() => {
@@ -1937,7 +1937,7 @@ function App() {
                         <section
                           ref={setNodeRef}
                           style={style}
-                          className={`section-row ${isDragging ? 'is-dragging' : ''} group flex items-stretch gap-2`}
+                          className={`section-row ${isBulletHidden ? 'titles-only' : ''} ${isDragging ? 'is-dragging' : ''} group flex items-stretch gap-2`}
                         >
                           <aside
                             className="section-anchor w-64 self-stretch rounded-xl p-3 text-white shadow-sm"
@@ -1999,7 +1999,7 @@ function App() {
                                     className="slide-wrap"
                                     style={{
                                       '--boxes-per-row': effectiveBoxesPerRow,
-                                      '--row-h': isBulletHidden ? '84px' : '144px',
+                                      '--row-h': isBulletHidden ? '72px' : '144px',
                                     }}
                                   >
                                     {section.slides.map((slideCard, slideIndex) => {
