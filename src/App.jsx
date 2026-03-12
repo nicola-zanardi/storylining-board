@@ -16,7 +16,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Columns3, Copy, Download, FolderKanban, Plus, Trash2, Upload } from 'lucide-react';
+import { ChevronDown, ChevronUp, Columns3, Copy, Download, FolderKanban, Plus, Trash2, Upload } from 'lucide-react';
 import PptxGenJS from 'pptxgenjs';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -120,7 +120,7 @@ function normalizeBoard(board, fallbackTitle = 'Untitled Board') {
 
   return {
     title,
-    boxesPerRow: Math.min(8, Math.max(1, Number.parseInt(source.boxesPerRow, 10) || 4)),
+    boxesPerRow: clampBoxesPerRow(source.boxesPerRow, 4),
     sections: sections.length > 0 ? sections : [createEmptySection()],
   };
 }
@@ -279,6 +279,16 @@ function safeFileName(input) {
     .replace(/\s+/g, '_')
     .slice(0, 80);
 }
+
+function clampBoxesPerRow(input, fallback = 4) {
+  const parsed = Number.parseInt(input, 10);
+  if (Number.isNaN(parsed)) {
+    return fallback;
+  }
+
+  return Math.min(8, Math.max(1, parsed));
+}
+
 function autoResizeTextarea(node) {
   if (!node) {
     return;
@@ -426,6 +436,7 @@ function App() {
   const inputRefs = useRef(new Map());
   const bulletIdsRef = useRef(new Map());
   const boardImportInputRef = useRef(null);
+  const boxesPerRowInputRef = useRef(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -443,7 +454,7 @@ function App() {
   );
 
   const board = activeProject.board;
-  const boxesPerRow = Math.min(8, Math.max(1, Number.parseInt(board.boxesPerRow, 10) || 4));
+  const boxesPerRow = clampBoxesPerRow(board.boxesPerRow, 4);
   const slideNumberById = useMemo(() => buildSlideNumberMap(board.sections), [board.sections]);
 
   const getBulletIdsForSlide = useCallback((slideId, bullets) => {
@@ -579,14 +590,35 @@ function App() {
   }, []);
 
   const updateBoxesPerRow = useCallback(
-    (nextValue) => {
-      const parsed = Math.min(8, Math.max(1, Number.parseInt(nextValue, 10) || 4));
+    (nextValue, fallback = 4) => {
+      const parsed = clampBoxesPerRow(nextValue, fallback);
       updateActiveBoard((currentBoard) => ({
         ...currentBoard,
         boxesPerRow: parsed,
       }));
+      return parsed;
     },
     [updateActiveBoard],
+  );
+
+  const commitBoxesPerRowInput = useCallback(() => {
+    const rawValue = boxesPerRowInputRef.current?.value ?? String(boxesPerRow);
+    const committed = updateBoxesPerRow(rawValue, boxesPerRow);
+
+    if (boxesPerRowInputRef.current) {
+      boxesPerRowInputRef.current.value = String(committed);
+    }
+  }, [boxesPerRow, updateBoxesPerRow]);
+
+  const nudgeBoxesPerRow = useCallback(
+    (delta) => {
+      const next = clampBoxesPerRow(boxesPerRow + delta, boxesPerRow);
+      updateBoxesPerRow(next, boxesPerRow);
+      if (boxesPerRowInputRef.current) {
+        boxesPerRowInputRef.current.value = String(next);
+      }
+    },
+    [boxesPerRow, updateBoxesPerRow],
   );
 
   const updateSectionTitle = useCallback(
@@ -1389,7 +1421,7 @@ function App() {
     const sectionTextMargin = [4, 7, 4, 7];
     const cardTextMargin = [4, 5, 4, 6];
 
-    const columns = Math.min(8, Math.max(1, Number.parseInt(board.boxesPerRow, 10) || 4));
+    const columns = clampBoxesPerRow(board.boxesPerRow, 4);
 
     const rawHeights = board.sections.map((section) => {
       const slideCount = Math.max(1, section.slides.length);
@@ -1613,13 +1645,44 @@ function App() {
                 <Columns3 size={16} aria-hidden="true" />
                 <span className="sr-only">Boxes per row</span>
                 <input
+                  ref={boxesPerRowInputRef}
+                  key={`boxes-per-row-${activeProject.id}`}
                   type="text"
                   inputMode="numeric"
-                  value={String(boxesPerRow)}
-                  onChange={(event) => updateBoxesPerRow(event.target.value)}
-                  className="toolbar-select max-w-[90px] bg-transparent text-sm outline-none"
+                  defaultValue={String(boxesPerRow)}
+                  onChange={(event) => {
+                    const raw = event.target.value;
+                    if (raw !== '' && !/^\d{1,2}$/.test(raw)) {
+                      event.target.value = raw.replace(/\D/g, '').slice(0, 2);
+                    }
+                  }}
+                  onBlur={commitBoxesPerRowInput}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.currentTarget.blur();
+                    }
+                  }}
+                  className="toolbar-select w-10 min-w-0 bg-transparent text-center text-sm outline-none"
                   aria-label="Boxes per row"
                 />
+                <div className="flex flex-col overflow-hidden rounded-sm border border-slate-300/90 bg-slate-50">
+                  <button
+                    type="button"
+                    onClick={() => nudgeBoxesPerRow(1)}
+                    className="inline-flex h-3.5 w-4 items-center justify-center text-slate-600 hover:bg-slate-100"
+                    aria-label="Increase boxes per row"
+                  >
+                    <ChevronUp size={11} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => nudgeBoxesPerRow(-1)}
+                    className="inline-flex h-3.5 w-4 items-center justify-center border-t border-slate-300/90 text-slate-600 hover:bg-slate-100"
+                    aria-label="Decrease boxes per row"
+                  >
+                    <ChevronDown size={11} />
+                  </button>
+                </div>
               </label>
 
 
@@ -1940,9 +2003,6 @@ function App() {
 }
 
 export default App;
-
-
-
 
 
 

@@ -186,7 +186,7 @@ body {
   flex-grow: 1;
   min-width: 0;
   border: 1px solid var(--line);
-  padding: 0.3rem !important;
+  padding: 0.08rem !important;
   overflow: hidden;
   background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
 }
@@ -516,5 +516,4 @@ body {
     transform: none;
   }
 }
-
 
