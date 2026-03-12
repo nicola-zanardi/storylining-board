@@ -1641,7 +1641,7 @@ function App() {
                 </select>
               </label>
 
-              <label className="toolbar-field flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700">
+              <label className="toolbar-field toolbar-number-control flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2 py-1 text-sm text-slate-700">
                 <Columns3 size={16} aria-hidden="true" />
                 <span className="sr-only">Boxes per row</span>
                 <input
@@ -1662,14 +1662,14 @@ function App() {
                       event.currentTarget.blur();
                     }
                   }}
-                  className="toolbar-select w-10 min-w-0 bg-transparent text-center text-sm outline-none"
+                  className="toolbar-select toolbar-number-input bg-transparent text-center text-sm outline-none"
                   aria-label="Boxes per row"
                 />
-                <div className="flex flex-col overflow-hidden rounded-sm border border-slate-300/90 bg-slate-50">
+                <div className="toolbar-stepper flex flex-col overflow-hidden rounded-sm border border-slate-300/90 bg-slate-50">
                   <button
                     type="button"
                     onClick={() => nudgeBoxesPerRow(1)}
-                    className="inline-flex h-3.5 w-4 items-center justify-center text-slate-600 hover:bg-slate-100"
+                    className="toolbar-stepper-btn inline-flex items-center justify-center text-slate-600 hover:bg-slate-100"
                     aria-label="Increase boxes per row"
                   >
                     <ChevronUp size={11} />
@@ -1677,7 +1677,7 @@ function App() {
                   <button
                     type="button"
                     onClick={() => nudgeBoxesPerRow(-1)}
-                    className="inline-flex h-3.5 w-4 items-center justify-center border-t border-slate-300/90 text-slate-600 hover:bg-slate-100"
+                    className="toolbar-stepper-btn inline-flex items-center justify-center border-t border-slate-300/90 text-slate-600 hover:bg-slate-100"
                     aria-label="Decrease boxes per row"
                   >
                     <ChevronDown size={11} />
@@ -2003,7 +2003,6 @@ function App() {
 }
 
 export default App;
-
 
 
 
